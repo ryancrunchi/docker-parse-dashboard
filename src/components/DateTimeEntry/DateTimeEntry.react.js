@@ -6,7 +6,6 @@
  * the root directory of this source tree.
  */
 import DateTimePicker from 'components/DateTimePicker/DateTimePicker.react';
-import { MONTHS }     from 'lib/DateUtils';
 import Popover        from 'components/Popover/Popover.react';
 import Position       from 'lib/Position';
 import React          from 'react';
@@ -34,7 +33,7 @@ export default class DateTimeEntry extends React.Component {
   }
 
   toggle() {
-    this.setState((state) => {
+    this.setState(() => {
       if (this.state.open) {
         return { open: false };
       }
@@ -68,7 +67,7 @@ export default class DateTimeEntry extends React.Component {
     let date = new Date(this.state.value);
     if (isNaN(date.getTime())) {
       this.setState({ value: this.props.value.toISOString() });
-    } else {
+    } else if (!this.state.value.toLowerCase().endsWith('z')) {
       let utc = new Date(Date.UTC(
         date.getFullYear(),
         date.getMonth(),
@@ -79,6 +78,8 @@ export default class DateTimeEntry extends React.Component {
         date.getMilliseconds()
       ));
       this.props.onChange(utc);
+    } else {
+      this.props.onChange(date);
     }
   }
 

@@ -15,6 +15,7 @@ const parseDashboard = require('./app');
 const program = require('commander');
 program.option('--appId [appId]', 'the app Id of the app you would like to manage.');
 program.option('--masterKey [masterKey]', 'the master key of the app you would like to manage.');
+program.option('--javascriptKey [javascriptKey]', 'the javascript key of the app you would like to manage');
 program.option('--serverURL [serverURL]', 'the server url of the app you would like to manage.');
 program.option('--appName [appName]', 'the name of the app you would like to manage. Optional.');
 program.option('--config [config]', 'the path to the configuration file');
@@ -24,7 +25,8 @@ program.option('--mountPath [mountPath]', 'the mount path to run parse-dashboard
 program.option('--allowInsecureHTTP [allowInsecureHTTP]', 'set this flag when you are running the dashboard behind an HTTPS load balancer or proxy with early SSL termination.');
 program.option('--sslKey [sslKey]', 'the path to the SSL private key.');
 program.option('--sslCert [sslCert]', 'the path to the SSL certificate.');
-program.option('--trustProxy [0|1]', 'enable/disable trust proxy, default enable.');
+program.option('--trustProxy [trustProxy]', 'set this flag when you are behind a front-facing proxy, such as when hosting on Heroku.  Uses X-Forwarded-* headers to determine the client\'s connection and IP address.');
+program.option('--cookieSessionSecret [cookieSessionSecret]', 'set the cookie session secret, defaults to a random string. You should set that value if you want sessions to work across multiple server, or across restarts');
 
 program.parse(process.argv);
 
@@ -32,16 +34,20 @@ const host = program.host || process.env.HOST || '0.0.0.0';
 const port = program.port || process.env.PORT || 4040;
 const mountPath = program.mountPath || process.env.MOUNT_PATH || '/';
 const allowInsecureHTTP = program.allowInsecureHTTP || process.env.PARSE_DASHBOARD_ALLOW_INSECURE_HTTP;
-// trustProxy = null || null || '1' , trustProxy == '1', !!+trustProxy = true
-// trustProxy = '0' || null || true , trustProxy === '0', !!+trustProxy = false
-// trustProxy = null || '0' || true , trustProxy == '1', !!+trustProxy = false
-const trustProxy = !!+(program.trustProxy || process.env.TRUST_PROXY || '1');
+const cookieSessionSecret = program.cookieSessionSecret || process.env.PARSE_DASHBOARD_COOKIE_SESSION_SECRET;
+const trustProxy = program.trustProxy || process.env.PARSE_DASHBOARD_TRUST_PROXY;
+
+if (trustProxy && allowInsecureHTTP) {
+  console.log("Set only trustProxy *or* allowInsecureHTTP, not both.  Only one is needed to handle being behind a proxy.");
+  process.exit(-1);
+}
 
 let explicitConfigFileProvided = !!program.config;
 let configFile = null;
 let configFromCLI = null;
 let configServerURL = program.serverURL || process.env.PARSE_DASHBOARD_SERVER_URL;
 let configMasterKey = program.masterKey || process.env.PARSE_DASHBOARD_MASTER_KEY;
+let configJavascriptKey = program.javascriptKey || process.env.PARSE_DASHBOARD_JAVASCRIPT_KEY;
 let configAppId = program.appId || process.env.PARSE_DASHBOARD_APP_ID;
 let configAppName = program.appName || process.env.PARSE_DASHBOARD_APP_NAME;
 let configUserId = program.userId || process.env.PARSE_DASHBOARD_USER_ID;
@@ -58,6 +64,7 @@ if (!program.config && !process.env.PARSE_DASHBOARD_CONFIG) {
             serverURL: configServerURL,
             masterKey: configMasterKey,
             appName: configAppName,
+            javascriptKey: configJavascriptKey
           },
         ]
       }
@@ -110,8 +117,11 @@ p.then(config => {
 
   const app = express();
 
-  if (allowInsecureHTTP) app.enable('trust proxy');
-  app.use(mountPath, parseDashboard(config.data, allowInsecureHTTP));
+  if (allowInsecureHTTP || trustProxy) app.enable('trust proxy');
+
+  config.data.trustProxy = trustProxy;
+  let dashboardOptions = { allowInsecureHTTP: allowInsecureHTTP, cookieSessionSecret: cookieSessionSecret };
+  app.use(mountPath, parseDashboard(config.data, dashboardOptions));
   if(!configSSLKey || !configSSLCert){
     // Start the server.
     const server = app.listen(port, host, function () {

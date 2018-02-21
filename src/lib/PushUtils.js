@@ -134,7 +134,7 @@ let formatConstraintComponent = (key, operation, value, schema) => {
       if(!value.constructor === Array) {
         res = [key, `constraint is malformed (${operation} operator requires an array)`, ''];
       } else if (!schema[key]) {
-        ['', `Cannot perform operation on non-existent column ${key}`, ''];
+        res = ['', `Cannot perform operation on non-existent column ${key}`, ''];
       } else if (schema[key]['type'] === 'Array'){
         let isAll = operation === '$all';
         res = [key,
@@ -190,6 +190,8 @@ export function formatConstraint(key, constraints, schema) {
         break;
       }
     }
+  } else if(constraints.constructor === Boolean) {
+    rows.push([[key, 'is', constraints ? 'true' : 'false']]);
   } else {
     rows.push([[key, 'is', constraints]]);
   }
@@ -303,6 +305,10 @@ let tableInfoBuilderHelper = (styles, key, description, value) => {
 }
 
 export function tableInfoBuilder(query, schema, styles = {}) {
+  try {
+    query = JSON.parse(query);
+  } catch(e) {/**/} 
+
   if(!query) {
     return;
   }
@@ -333,7 +339,7 @@ export function tableInfoBuilder(query, schema, styles = {}) {
           if (constraint && Array.isArray(constraint[0])) {
             // case 1: contraint = [[key, description, value]]
             constraint.forEach(
-              ([key, description, value], i) => {
+              ([key, description, value]) => {
                 tableInfoRows.push(tableInfoBuilderHelper(styles, key, description, value));
               }
             );

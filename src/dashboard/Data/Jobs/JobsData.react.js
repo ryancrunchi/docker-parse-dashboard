@@ -19,13 +19,17 @@ export default class JobsData extends React.Component {
     };
   }
 
+  // As parse-server doesn't support (yet?) these features, we are disabling
+  // these calls in the meantime.
+
+  /*
   fetchRelease(app) {
     app.getLatestRelease().then(
       ({ release }) => this.setState({ release }),
       () => this.setState({ release: null })
     );
   }
-
+  */
   fetchJobs(app) {
     app.getAvailableJobs().then(
       ({ jobs, in_use }) => {
@@ -42,14 +46,13 @@ export default class JobsData extends React.Component {
 
   componentDidMount() {
     this.fetchJobs(this.context.currentApp);
-    this.fetchRelease(this.context.currentApp);
+    // this.fetchRelease(this.context.currentApp);
   }
 
   componentWillReceiveProps(props, context) {
     if (this.context !== context) {
-      this.setState({ release: undefined, jobs: undefined, inUse: undefined });
       this.fetchJobs(context.currentApp);
-      this.fetchRelease(context.currentApp);
+      // this.fetchRelease(context.currentApp);
     }
   }
 

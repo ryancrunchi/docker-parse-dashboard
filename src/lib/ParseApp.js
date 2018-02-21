@@ -39,6 +39,7 @@ export default class ParseApp {
     serverInfo,
     production,
     iconName,
+    supportedPushLocales,
   }) {
     this.name = appName;
     this.createdAt = created_at ? new Date(created_at) : new Date();
@@ -59,6 +60,11 @@ export default class ParseApp {
     this.serverURL = serverURL;
     this.serverInfo = serverInfo;
     this.icon = iconName;
+    this.supportedPushLocales = supportedPushLocales ? supportedPushLocales : [];
+
+    if(!supportedPushLocales) {
+      console.warn(`Missing push locales for '` + appName + `', see this link for details on setting localizations up. https://github.com/parse-community/parse-dashboard#configuring-localized-push-notifications`);
+    }
 
     this.settings = {
       fields: {},
@@ -357,14 +363,19 @@ export default class ParseApp {
   }
 
   clearCollection(className) {
-    let path = `/apps/${this.slug}/collections/${className}/clear`;
-    return AJAX.del(path);
+    if (this.serverInfo.parseServerVersion == 'Parse.com') {
+      let path = `/apps/${this.slug}/collections/${className}/clear`;
+      return AJAX.del(path);
+    } else {
+      let path = `purge/${className}`;
+      return this.apiRequest('DELETE', path, {}, { useMasterKey: true });
+    }
   }
 
   validateCollaborator(email) {
     let path = '/apps/' + this.slug + '/collaborations/validate?email=' + encodeURIComponent(email);
     return AJAX.get(path);
-	}
+  }
 
   fetchPushSubscriberCount(audienceId, query) {
     let path = '/apps/' + this.slug + '/dashboard_ajax/push_subscriber_count';
@@ -376,23 +387,15 @@ export default class ParseApp {
     return AJAX.abortableGet(audienceId ? `${path}${urlsSeparator}audienceId=${audienceId}` : path);
   }
 
-  fetchPushNotifications(type, page) {
-    let path = '/apps/' + this.slug + '/push_notifications/' + `?type=${type}`;
-    if (page) {
-      path += `&page=${page}`;
+  fetchPushNotifications(type, page, limit) {
+    let query = new Parse.Query('_PushStatus');
+    if (type != 'all') {
+      query.equalTo('source', type || 'rest');
     }
-    return AJAX.abortableGet(path);
-  }
-
-  fetchPushNotificationsCount(pushData) {
-    let query = '?';
-    for(let i in pushData){
-      if(pushData.hasOwnProperty(i)){
-        query += `pushes[${i}]=${pushData[i]}&`;
-      }
-    }
-    let path = '/apps/' + this.slug + '/push_notifications/pushes_sent_batch' + encodeURI(query);
-    return AJAX.get(path);
+    query.skip(page*limit);
+    query.limit(limit);
+    query.descending('createdAt');
+    return query.find({ useMasterKey: true });
   }
 
   fetchPushAudienceSizeSuggestion() {
@@ -401,18 +404,17 @@ export default class ParseApp {
   }
 
   fetchPushDetails(objectId) {
-    let path = '/apps/' + this.slug + `/push_notifications/${objectId}/push_details`;
-    return AJAX.abortableGet(path);
+    let query = new Parse.Query('_PushStatus');
+    query.equalTo('objectId', objectId);
+    return query.first({ useMasterKey: true });
   }
 
   isLocalizationAvailable() {
-    let path = '/apps/' + this.slug + '/is_localization_available';
-    return AJAX.abortableGet(path);
+    return !!this.serverInfo.features.push.localization;
   }
 
   fetchPushLocales() {
-    let path = '/apps/' + this.slug + '/installation_column_options?column=localeIdentifier';
-    return AJAX.abortableGet(path);
+    return this.supportedPushLocales;
   }
 
   fetchPushLocaleDeviceCount(audienceId, where, locales) {
@@ -508,17 +510,21 @@ export default class ParseApp {
   }
 
   getAvailableJobs() {
-    let path = '/apps/' + this.slug + '/cloud_code/jobs/data';
-    return AJAX.get(path);
+    let path = 'cloud_code/jobs/data';
+    return this.apiRequest('GET', path, {}, { useMasterKey: true });
   }
 
   getJobStatus() {
-    // Cache it for a minute
-    if (new Date() - this.jobStatus.lastFetched < 60000) {
+    // Cache it for a 30s
+    if (new Date() - this.jobStatus.lastFetched < 30000) {
       return Parse.Promise.as(this.jobStatus.status);
     }
-    let path = '/apps/' + this.slug + '/cloud_code/job_status/all';
-    return AJAX.get(path).then((status) => {
+    let query = new Parse.Query('_JobStatus');
+    query.descending('createdAt');
+    return query.find({ useMasterKey: true }).then((status) => {
+      status = status.map((jobStatus) => {
+        return jobStatus.toJSON();
+      });
       this.jobStatus = {
         status: status || null,
         lastFetched: new Date()

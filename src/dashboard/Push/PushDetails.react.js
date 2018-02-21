@@ -22,7 +22,6 @@ import Parse                  from 'parse';
 import prettyNumber           from 'lib/prettyNumber';
 import PushExperimentDropdown from 'components/PushExperimentDropdown/PushExperimentDropdown.react';
 import PushOpenRate           from 'components/PushOpenRate/PushOpenRate.react';
-import PushPreview            from 'components/PushPreview/PushPreview.react';
 import React                  from 'react';
 import SliderWrap             from 'components/SliderWrap/SliderWrap.react';
 import styles                 from './PushDetails.scss';
@@ -35,12 +34,18 @@ import { Link }               from 'react-router';
 import { Promise }            from 'parse';
 import { tableInfoBuilder }   from 'lib/PushUtils';
 
-const EXP_STATS_URL = 'https://www.parse.com/docs/ios/guide#push-notifications-push-experiments';
+const EXP_STATS_URL = 'http://docs.parseplatform.org/ios/guide/#push-experiments';
 
 let getMessage = (payload) => {
   if(payload) {
     let payloadJSON = JSON.parse(payload);
-    return payloadJSON.alert ? payloadJSON.alert : payload;
+		if (payloadJSON.alert.body) {
+			return payloadJSON.alert.body;
+		} else if (payloadJSON.alert) {
+			return payloadJSON.alert;
+		} else {
+			return payload;
+		}
   }
   return '';
 }
@@ -59,7 +64,7 @@ let getSentInfo = (sendTime, expiration) => {
     return '';
   }
 
-  let fmtSendTime = getFormattedTime(sendTime);
+  let fmtSendTime = getFormattedTime({time: sendTime});
   let fmtExpiration = expiration ? getFormattedTime({time: expiration * 1000}) : null;
   if (expiration){
     return `Sent ${fmtSendTime} and expires ${fmtExpiration}`;
@@ -118,7 +123,7 @@ let getStatusTable = (pushDetails, deferDeliveries) => {
                 <div className={styles.deliveryName}>Successful Deliveries</div>
                 <div className={styles.deliveryMessage}>Give your test a memorable name so you remember what you were testing when you see the results.</div>
               </td>
-              <td className={tableStyles.td} width={'35%'}>{pushDetails.push_sends}</td>
+              <td className={tableStyles.td} width={'35%'}>{pushDetails.get('numSent')}</td>
             </tr> :
             null
           }
@@ -219,9 +224,11 @@ export default class PushDetails extends DashboardView {
 
   componentWillMount() {
     this.props.schema.dispatch(SchemaStore.ActionTypes.FETCH);
-    let { xhr, promise } = this.context.currentApp.fetchPushDetails(this.props.params.pushId);
-    this.xhrHandles = [xhr];
+    let promise = this.context.currentApp.fetchPushDetails(this.props.params.pushId);
     promise.then((pushDetails) => {
+      if (!pushDetails) {
+        return null;
+      }
       this.setState({ pushDetails });
       if (pushDetails.statistics && pushDetails.statistics.confidence_interval) {
         this.setState({
@@ -301,7 +308,7 @@ export default class PushDetails extends DashboardView {
           ...query,
           pushStatusID: pushStatusID,
         });
-        promise = promise.then((data) => {
+        promise.then((data) => {
           let chartData = formatAnalyticsData(data);
           if (chartData.length > 0) {
             this.setState({
@@ -342,8 +349,6 @@ export default class PushDetails extends DashboardView {
 
     let pushDetails = this.state.pushDetails;
     let statistics = pushDetails.statistics;
-
-    let isMessageType = pushDetails.exp_type === 'message';
 
     let learnMore = (
       <a href={EXP_STATS_URL} target='_blank'>Learn more</a>
@@ -455,11 +460,14 @@ export default class PushDetails extends DashboardView {
 
   renderPushRates(experimentInfo) {
     let pushDetails = this.state.pushDetails;
+    if (!pushDetails.id) {
+      return null;
+    }
     let launchChoice = pushDetails.launch_choice;
-    let statistics = pushDetails.statistics;
     let isMessageType = pushDetails.exp_type === 'message';
     let res = null;
     let prevLaunchGroup = null;
+		let alert = getMessage(pushDetails.get('payload'));
 
     if (pushDetails && pushDetails.experiment_push_id) {
       prevLaunchGroup = (
@@ -511,16 +519,23 @@ export default class PushDetails extends DashboardView {
         <div>
           <div className={styles.groupHeader}>
             <div className={styles.headerTitle}>MESSAGE SENT</div>
-            <div className={styles.headline}>{getMessage(pushDetails.payload)}</div>
+							{
+								(typeof alert === 'object') ?
+									<div>
+										<div className={styles.headline}>{alert.title}</div>
+										<div className={styles.headline}>{alert.body}</div>
+									</div>:
+									<div className={styles.headline}>{alert}</div>
+							}
             <div className={styles.subline}>
-              {getSentInfo(pushDetails.send_time, pushDetails.expiration)}
+              {getSentInfo(pushDetails.get('pushTime'), pushDetails.get('expiration'))}
             </div>
           </div>
           {prevLaunchGroup}
           {experimentInfo}
           <PushOpenRate
-            numOpened={pushDetails.push_opens}
-            numSent={pushDetails.push_sends}
+            numOpened={pushDetails.get('numOpened') || 0}
+            numSent={pushDetails.get('numSent')}
             customColor={this.state.standardColor} />
         </div>
       );
@@ -547,7 +562,17 @@ export default class PushDetails extends DashboardView {
   }
 
   renderTargetTable() {
-    return getTargetTable(this.state.pushDetails.query, this.props.schema, tableStyles);
+    let classes = this.props.schema.data.get('classes');
+    let schema = {};
+    if(classes){
+      let installations = classes.get('_Installation');
+      if(typeof(installations) !== 'undefined'){
+        installations.forEach((type, col) => {
+          schema[col] = type;
+        });
+      }
+    }
+    return getTargetTable(this.state.pushDetails.get('query'), schema, tableStyles);
   }
 
   renderStatusTable() {
@@ -648,9 +673,7 @@ export default class PushDetails extends DashboardView {
         {key: DROPDOWN_KEY_GROUP_B, style: { color: this.state.groupColorB }}]} />
   }
 
- renderForm(flowFooterDetails, { fields, changes, setField, resetFields }) {
-    let multiMessage = (fields.exp_enable && fields.exp_type === 'message');
-
+ renderForm(flowFooterDetails, { fields, setField }) {
     let classes = this.props.schema.data.get('classes');
     let schema = {};
     if(classes){
@@ -679,6 +702,9 @@ export default class PushDetails extends DashboardView {
 
   //TODO: (peterjs) PushPreview Component
   renderContent() {
+    if (this.state.loading) {
+      return;
+    }
     let { isFlowView, experimentInfo, flowFooterDetails } = this.experimentInfoHelper();
     return (
       <div className={styles.detailsWrapper}>

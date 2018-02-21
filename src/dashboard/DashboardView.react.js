@@ -47,23 +47,20 @@ export default class DashboardView extends React.Component {
     }
 
     //webhooks requires removal of heroku link code, then it should work.
-    /*
     if (features.hooks && features.hooks.create && features.hooks.read && features.hooks.update && features.hooks.delete) {
       coreSubsections.push({
         name: 'Webhooks',
         link: '/webhooks'
       });
     }
-    */
 
-    /* Jobs not supported
-    if (...) {
+    if (features.cloudCode && features.cloudCode.jobs) {
       coreSubsections.push({
         name: 'Jobs',
         link: '/jobs'
       });
     }
-    */
+
     if (features.logs && Object.keys(features.logs).some(key => features.logs[key])) {
       coreSubsections.push({
         name: 'Logs',
@@ -101,8 +98,6 @@ export default class DashboardView extends React.Component {
         link: '/push/new'
       });
     }
-    // The push UI requires immediate and scheduled push (and some ruby endpoints that we will have to remove)
-    /*
 
     if (features.push && features.push.storedPushData) {
       pushSubsections.push({
@@ -116,7 +111,7 @@ export default class DashboardView extends React.Component {
         name: 'Audiences',
         link: '/push/audiences'
       });
-    }*/
+    }
 
     let analyticsSidebarSections = [];
 
@@ -236,7 +231,7 @@ export default class DashboardView extends React.Component {
         link: '/settings',
         subsections: settingsSections
       });
-    };
+    }
 
     let sidebar = (
     <Sidebar
